@@ -16,7 +16,7 @@ class INodeSuite extends UnitTestSuite {
   }
 
   test("tokenize root") {
-    assert(INode.tokenize(new Path("/")) === Nil)
+    assert(INode.tokenize(new Path("/")) === Seq())
     assert(INode.tokenize(new Path("/a")) === Seq("a"))
     assert(INode.tokenize(new Path("/a/")) === Seq("a"))
     assert(INode.tokenize(new Path("/a/b")) === Seq("a", "b"))
@@ -26,8 +26,8 @@ class INodeSuite extends UnitTestSuite {
   }
 
   test("is directory") {
-    assert((new INode(true)).isDir)
-    assert(!(new INode(false)).isDir)
+    assert((new INode("dir", true)).isDir)
+    assert(!(new INode("dir", false)).isDir)
   }
 
   test("create a directory") {
@@ -181,5 +181,44 @@ class INodeSuite extends UnitTestSuite {
     assert(!root.remove(new Path("/a/b/file/c"), false))
 
     assert(root.get(new Path("/a/b/file")) != null)
+  }
+
+  test("list") {
+    val root = INode.root
+    root.create(new Path("/a/b/x"), true, false)
+    root.create(new Path("/a/b/y"), true, false)
+    root.create(new Path("/a/b/z"), true, false)
+    root.create(new Path("/a/b/_file"), false, false)
+
+    assert(root.list(new Path("/a")).map(_.getName) === Seq("b"))
+    assert(root.list(new Path("/a/b")).map(_.getName) === Seq("_file", "x", "y", "z"))
+  }
+
+  test("list result sorting order") {
+    val root = INode.root
+    val items = (0 until 32) // more than initial hash map capacity
+    for (i <- items) {
+      root.create(new Path("/a/" + i), true, false)
+    }
+    assert(root.list(new Path("/a")).map(_.getName) === items.map(_.toString).sorted)
+  }
+
+  test("list non-existent path") {
+    val root = INode.root
+    root.create(new Path("/a/b"), true, false)
+    assert(root.list(new Path("/a/b/c/d")) == null)
+  }
+
+  test("list empty directory") {
+    val root = INode.root
+    root.create(new Path("/a/b"), true, false)
+    assert(root.list(new Path("/a/b")).map(_.getName) === Seq())
+  }
+
+  test("list a file") {
+    val root = INode.root
+    root.create(new Path("/a/b/file"), false, false)
+    assert(root.list(new Path("/a/b")).map(_.getName) === Seq("file"))
+    assert(root.list(new Path("/a/b/file")).map(_.getName) === Seq("file"))
   }
 }

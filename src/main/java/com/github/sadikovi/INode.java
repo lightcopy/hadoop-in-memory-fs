@@ -1,21 +1,39 @@
 package com.github.sadikovi;
 
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Comparator;
 
 import org.apache.hadoop.fs.Path;
 
 public class INode {
+  // Name of the INode, represents the directory or file name
+  private final String name;
   // If this is null, it is a file, if it is empty it is a dir
   private final HashMap<String, INode> children;
 
+  // Default comparator to sort inodes in lexicographical order
+  private static final Comparator<INode> DEFAULT_CMP = new Comparator<INode>() {
+    @Override
+    public int compare(INode left, INode right) {
+      return left.getName().compareTo(right.getName());
+    }
+  };
+
   // Private constructor
-  INode(boolean isDir) {
+  INode(String name, boolean isDir) {
+    this.name = name;
     this.children = isDir ? new HashMap<String, INode>() : null;
   }
 
   /** Returns a root node */
   public static INode root() {
-    return new INode(true);
+    return new INode("root", true);
+  }
+
+  /** Returns node name (token) */
+  public String getName() {
+    return name;
   }
 
   /** Returns true if the node is a directory */
@@ -35,6 +53,26 @@ public class INode {
     return tmp;
   }
 
+  /** List a directory or a file */
+  public INode[] list(Path p) {
+    assertValidPath(p);
+    INode node = get(p);
+    if (node == null) return null;
+    if (node.isDir()) {
+      INode[] res = new INode[node.children.size()];
+      int i = 0;
+      for (INode child : node.children.values()) {
+        res[i++] = child;
+      }
+      // Sort explicitly for now
+      Arrays.sort(res, DEFAULT_CMP);
+      return res;
+    } else {
+      // Listing of a file is the file itself
+      return new INode[] { node };
+    }
+  }
+
   /** Create path, directory or a file */
   public boolean create(Path p, boolean isDir, boolean overwriteFile) {
     assertValidPath(p);
@@ -43,7 +81,7 @@ public class INode {
     for (int i = 0; i < tokens.length - 1; i++) {
       INode node = tmp.children.get(tokens[i]);
       if (node == null) {
-        node = new INode(true);
+        node = new INode(tokens[i], true);
         tmp.children.put(tokens[i], node);
       }
       if (!node.isDir()) return false;
@@ -55,7 +93,7 @@ public class INode {
     String token = tokens[tokens.length - 1];
     INode node = tmp.children.get(token);
     if (node == null || !node.isDir() && !isDir && overwriteFile) {
-      node = new INode(isDir);
+      node = new INode(token, isDir);
       tmp.children.put(token, node);
       return true;
     }

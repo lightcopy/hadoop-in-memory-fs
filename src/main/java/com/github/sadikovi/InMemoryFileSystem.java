@@ -29,7 +29,7 @@ public class InMemoryFileSystem extends FileSystem {
     this.scheme = name.getScheme();
     this.uri = name;
     this.workingDir = new Path("/home").makeQualified(this.uri, null);
-    this.root = new INode(true);
+    this.root = INode.root();
   }
 
   @Override

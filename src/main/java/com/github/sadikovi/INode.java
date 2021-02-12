@@ -13,6 +13,8 @@ public class INode {
   private final String name;
   // If this is null, it is a file; if it is empty, it is a directory
   private final HashMap<String, INode> children;
+  // Modification time for the node
+  private long modificationTime;
   // Content for a file, set to null for a directory
   private byte[] content;
 
@@ -28,6 +30,8 @@ public class INode {
   INode(String name, boolean isDir) {
     this.name = name;
     this.children = isDir ? new HashMap<String, INode>() : null;
+    this.modificationTime = System.currentTimeMillis();
+    this.content = null;
   }
 
   /** Returns a root node */
@@ -43,6 +47,16 @@ public class INode {
   /** Returns true if the node is a directory */
   public boolean isDir() {
     return children != null;
+  }
+
+  /** Returns size for the content in bytes */
+  public long getContentLength() {
+    return (isDir() || content == null) ? 0 : content.length;
+  }
+
+  /** Returns modification time */
+  public long getModificationTime() {
+    return modificationTime;
   }
 
   /** Returns a valid node for path or null if no such node exists */
@@ -140,6 +154,7 @@ public class INode {
     INode node = get(p);
     if (node == null || node.isDir()) return;
     node.content = content;
+    node.modificationTime = System.currentTimeMillis();
   }
 
   /** Converts path /a/b/c into tokens ["a", "b", "c"] */

@@ -60,7 +60,7 @@ public class InMemoryFileSystem extends FileSystem {
 
   @Override
   public FSDataOutputStream append(Path f, int bufferSize, Progressable progress) throws IOException {
-    return null;
+    throw new UnsupportedOperationException();
   }
 
   @Override

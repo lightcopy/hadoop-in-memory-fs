@@ -221,4 +221,39 @@ class INodeSuite extends UnitTestSuite {
     assert(root.list(new Path("/a/b")).map(_.getName) === Seq("file"))
     assert(root.list(new Path("/a/b/file")).map(_.getName) === Seq("file"))
   }
+
+  test("open an empty file") {
+    val root = INode.root
+    root.create(new Path("/file"), false, false)
+    assert(root.open(new Path("/file")).available() == 0)
+  }
+
+  test("open a non-existent path") {
+    val root = INode.root
+    assert(root.open(new Path("/file")) == null)
+  }
+
+  test("open a directory") {
+    val root = INode.root
+    root.create(new Path("/dir"), true, false)
+    assert(root.open(new Path("/dir")) == null)
+  }
+
+  test("open a non-empty file") {
+    val root = INode.root
+    root.create(new Path("/file"), false, false)
+    root.setContent(new Path("/file"), Array[Byte](1, 2, 3, 4, 5))
+
+    val res = new Array[Byte](8)
+    val in = root.open(new Path("/file"))
+    assert(in.read(res, 0, res.length) == 5)
+    assert(res === Seq(1, 2, 3, 4, 5, 0, 0, 0))
+  }
+
+  test("set content on a directory") {
+    val root = INode.root
+    root.create(new Path("/dir"), true, false)
+    root.setContent(new Path("/dir"), Array[Byte](1, 2, 3, 4, 5))
+    assert(root.open(new Path("/file")) == null)
+  }
 }

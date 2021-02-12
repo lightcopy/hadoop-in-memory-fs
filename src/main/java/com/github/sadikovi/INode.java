@@ -1,5 +1,7 @@
 package com.github.sadikovi;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Comparator;
@@ -9,8 +11,10 @@ import org.apache.hadoop.fs.Path;
 public class INode {
   // Name of the INode, represents the directory or file name
   private final String name;
-  // If this is null, it is a file, if it is empty it is a dir
+  // If this is null, it is a file; if it is empty, it is a directory
   private final HashMap<String, INode> children;
+  // Content for a file, set to null for a directory
+  private byte[] content;
 
   // Default comparator to sort inodes in lexicographical order
   private static final Comparator<INode> DEFAULT_CMP = new Comparator<INode>() {
@@ -120,6 +124,22 @@ public class INode {
       return true;
     }
     return false;
+  }
+
+  /** Open a file */
+  public InputStream open(Path p) {
+    assertValidPath(p);
+    INode node = get(p);
+    if (node == null || node.isDir()) return null;
+    return new ByteArrayInputStream(node.content == null ? new byte[0] : node.content);
+  }
+
+  /** Set content for a file */
+  public void setContent(Path p, byte[] content) {
+    assertValidPath(p);
+    INode node = get(p);
+    if (node == null || node.isDir()) return;
+    node.content = content;
   }
 
   /** Converts path /a/b/c into tokens ["a", "b", "c"] */

@@ -1,18 +1,21 @@
 package com.github.sadikovi;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Comparator;
 
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.PositionedReadable;
+import org.apache.hadoop.fs.Seekable;
 
 public class INode {
   // Name of the INode, represents the directory or file name
   private final String name;
   // If this is null, it is a file; if it is empty, it is a directory
-  private final HashMap<String, INode> children;
+  private HashMap<String, INode> children;
   // Modification time for the node
   private long modificationTime;
   // Content for a file, set to null for a directory
@@ -59,6 +62,84 @@ public class INode {
     return modificationTime;
   }
 
+  static class INodeInputStream
+      extends ByteArrayInputStream
+      implements Seekable, PositionedReadable {
+    public INodeInputStream(byte[] array) {
+      super(array);
+    }
+
+    @Override
+    public int read(long position, byte[] buffer, int offset, int length) {
+      // this method is not thread-safe
+      long curr = getPos();
+      seek(position);
+      try {
+        return read(buffer, offset, length);
+      } finally {
+        seek(curr);
+      }
+    }
+
+
+    @Override
+    public void readFully(long position, byte[] buffer) throws IOException {
+      readFully(position, buffer, 0, buffer.length);
+    }
+
+    @Override
+    public void readFully(long position, byte[] buffer, int offset, int length) throws IOException {
+      // this method is not thread-safe
+      long curr = getPos();
+      seek(position);
+      try {
+        int bytesRead = 0;
+        while (bytesRead < length) {
+          int bytes = read(buffer, offset + bytesRead, length - bytesRead);
+          if (bytes < 0) throw new IOException("Reached EOF");
+          bytesRead += bytes;
+        }
+      } finally {
+        seek(curr);
+      }
+    }
+
+    @Override
+    public void seek(long pos) {
+      skip(pos);
+    }
+
+    @Override
+    public long getPos() {
+      return this.pos;
+    }
+
+    @Override
+    public boolean seekToNewSource(long targetPos) {
+      return false;
+    }
+  }
+
+  /** Open a file */
+  public InputStream open() {
+    if (isDir()) return null;
+    return new INodeInputStream(content == null ? new byte[0] : content);
+  }
+
+  /** Set content for a file */
+  public void setContent(byte[] content) {
+    if (isDir()) return;
+    this.content = content;
+    this.modificationTime = System.currentTimeMillis();
+  }
+
+  /** Copies properties from the node "other" */
+  public void copyFrom(INode other) {
+    this.children = other.children;
+    this.content = other.content;
+    this.modificationTime = System.currentTimeMillis();
+  }
+
   /** Returns a valid node for path or null if no such node exists */
   public INode get(Path p) {
     assertValidPath(p);
@@ -92,7 +173,7 @@ public class INode {
   }
 
   /** Create path, directory or a file */
-  public boolean create(Path p, boolean isDir, boolean overwriteFile) {
+  public INode create(Path p, boolean isDir, boolean overwriteFile) {
     assertValidPath(p);
     INode tmp = this;
     String[] tokens = tokenize(p);
@@ -102,20 +183,20 @@ public class INode {
         node = new INode(tokens[i], true);
         tmp.children.put(tokens[i], node);
       }
-      if (!node.isDir()) return false;
+      if (!node.isDir()) return null;
       tmp = node;
     }
     // Handle the special case of the root directory
-    if (tokens.length == 0) return false;
+    if (tokens.length == 0) return null;
     // Handle general case
     String token = tokens[tokens.length - 1];
     INode node = tmp.children.get(token);
     if (node == null || !node.isDir() && !isDir && overwriteFile) {
       node = new INode(token, isDir);
       tmp.children.put(token, node);
-      return true;
+      return node;
     }
-    return false;
+    return null;
   }
 
   /** Remove the path */
@@ -140,23 +221,6 @@ public class INode {
     return false;
   }
 
-  /** Open a file */
-  public InputStream open(Path p) {
-    assertValidPath(p);
-    INode node = get(p);
-    if (node == null || node.isDir()) return null;
-    return new ByteArrayInputStream(node.content == null ? new byte[0] : node.content);
-  }
-
-  /** Set content for a file */
-  public void setContent(Path p, byte[] content) {
-    assertValidPath(p);
-    INode node = get(p);
-    if (node == null || node.isDir()) return;
-    node.content = content;
-    node.modificationTime = System.currentTimeMillis();
-  }
-
   /** Converts path /a/b/c into tokens ["a", "b", "c"] */
   static String[] tokenize(Path p) {
     assertValidPath(p);
@@ -176,6 +240,6 @@ public class INode {
 
   @Override
   public String toString() {
-    return isDir() ? ("DIR " + children) : "FILE";
+    return isDir() ? ("DIR " + children) : ("FILE (" + getContentLength() + ")");
   }
 }

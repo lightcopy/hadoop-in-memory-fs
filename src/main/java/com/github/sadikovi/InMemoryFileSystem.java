@@ -47,7 +47,9 @@ public class InMemoryFileSystem extends FileSystem {
   @Override
   public FSDataInputStream open(Path f, int bufferSize) throws IOException {
     Path abs = f.makeQualified(this.uri, this.workingDir);
-    InputStream in = root.open(abs);
+    INode node = root.get(abs);
+    if (node == null) throw new FileNotFoundException("" + abs);
+    InputStream in = node.open();
     if (in == null) throw new IOException("Cannot open path " + abs);
     return new FSDataInputStream(in);
   }
@@ -61,13 +63,15 @@ public class InMemoryFileSystem extends FileSystem {
       long blockSize,
       Progressable progress) throws IOException {
     Path abs = f.makeQualified(this.uri, this.workingDir);
-    if (root.create(abs, false, overwrite)) {
-      INode node = root.get(abs);
+    INode node = root.create(abs, false, overwrite);
+    if (node != null) {
       return new FSDataOutputStream(new ByteArrayOutputStream() {
         @Override
         public void close() throws IOException {
           super.close();
-          root.setContent(abs, buf);
+          byte[] out = new byte[count];
+          System.arraycopy(buf, 0, out, 0, count);
+          node.setContent(out);
         }
       }, null);
     } else {
@@ -82,7 +86,18 @@ public class InMemoryFileSystem extends FileSystem {
 
   @Override
   public boolean rename(Path src, Path dst) throws IOException {
-    return false;
+    Path from = src.makeQualified(this.uri, this.workingDir);
+    Path to = dst.makeQualified(this.uri, this.workingDir);
+
+    INode source = root.get(from);
+    if (source == null) return false;
+
+    INode dest = root.create(to, source.isDir(), false);
+    if (dest == null) return false;
+
+    dest.copyFrom(source);
+    root.remove(from, true); // remove recursively, we copied all of the subtrees into dest
+    return true;
   }
 
   @Override
@@ -111,7 +126,8 @@ public class InMemoryFileSystem extends FileSystem {
 
   @Override
   public void setWorkingDirectory(Path dir) {
-    this.workingDir = dir;
+    Path abs = dir.makeQualified(this.uri, this.workingDir);
+    this.workingDir = abs;
   }
 
   @Override
@@ -123,14 +139,20 @@ public class InMemoryFileSystem extends FileSystem {
   public boolean mkdirs(Path f, FsPermission permission) throws IOException {
     // TODO: handle permissions
     Path abs = f.makeQualified(this.uri, this.workingDir);
-    return root.create(abs, true, false);
+    return root.create(abs, true, false) != null;
   }
 
   @Override
   public FileStatus getFileStatus(Path f) throws IOException {
     Path abs = f.makeQualified(this.uri, this.workingDir);
     INode node = root.get(abs);
+    if (node == null) throw new FileNotFoundException("" + abs);
     return new FileStatus(
       node.getContentLength(), node.isDir(), 0, 0, node.getModificationTime(), abs);
+  }
+
+  @Override
+  public String toString() {
+    return root.toString();
   }
 }

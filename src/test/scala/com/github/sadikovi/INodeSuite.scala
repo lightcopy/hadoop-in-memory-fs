@@ -251,4 +251,62 @@ class INodeSuite extends UnitTestSuite {
     assert(res.getContent() === Array[Byte](1, 2, 3, 4, 5))
     assert(res.getContentLength() === 5)
   }
+
+  test("rename") {
+    val root = INode.root
+
+    assert(!root.rename(new Path("/"), new Path("/file")))
+    assert(root.get(new Path("/file")) == null)
+
+    assert(!root.rename(new Path("/"), new Path("/a")))
+    assert(root.get(new Path("/a")) == null)
+
+    root.create(new Path("/a"))
+    assert(!root.rename(new Path("/a"), new Path("/")))
+  }
+
+  test("rename a file") {
+    val root = INode.root
+
+    root.createFile(new Path("/a/file"), Array[Byte](1, 2, 3), false)
+    assert(root.rename(new Path("/a/file"), new Path("/b/file")))
+
+    assert(root.get(new Path("/a/file")) == null)
+    val node = root.get(new Path("/b/file"))
+    assert(node != null)
+    assert(!node.isDir)
+    assert(node.getContent() === Array[Byte](1, 2, 3))
+  }
+
+  test("rename a directory") {
+    val root = INode.root
+
+    root.create(new Path("/a/b/c"))
+    assert(root.rename(new Path("/a"), new Path("/a_new")))
+
+    assert(root.get(new Path("/a/b/c")) == null)
+    assert(root.get(new Path("/a_new")).isDir)
+    assert(root.get(new Path("/a_new/b")).isDir)
+    assert(root.get(new Path("/a_new/b/c")).isDir)
+  }
+
+  test("rename to an existing directory") {
+    val root = INode.root
+
+    root.create(new Path("/a/b/c"))
+    root.create(new Path("/a_new"))
+    assert(!root.rename(new Path("/a"), new Path("/a_new")))
+    assert(root.list(new Path("/a_new")).isEmpty)
+  }
+
+  test("rename to an existing file") {
+    val root = INode.root
+
+    root.createFile(new Path("/a/b/file"), null, false)
+    root.createFile(new Path("/file"), null, false)
+
+    assert(!root.rename(new Path("/a/b/file"), new Path("/file")))
+    assert(!root.get(new Path("/file")).isDir)
+    assert(!root.get(new Path("/a/b/file")).isDir)
+  }
 }

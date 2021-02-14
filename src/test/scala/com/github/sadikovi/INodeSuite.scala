@@ -25,20 +25,21 @@ class INodeSuite extends UnitTestSuite {
     assert(INode.tokenize(new Path("/a/b/c/")) === Seq("a", "b", "c"))
   }
 
-  test("is directory") {
-    assert((new INode("dir", true)).isDir)
-    assert(!(new INode("dir", false)).isDir)
+  test("root is directory") {
+    assert(INode.root.isDir)
   }
 
   test("create a directory") {
     val root = INode.root()
-    assert(root.create(new Path("/a/b/c/d"), true, false) != null)
+    val dir = root.create(new Path("/a/b/c/d"))
+
+    assert(dir != null)
     assert(root.get(new Path("/a")).isDir)
     assert(root.get(new Path("/a/b")).isDir)
     assert(root.get(new Path("/a/b/c")).isDir)
     assert(root.get(new Path("/a/b/c/d")).isDir)
 
-    assert(root.create(new Path("/a/b/c/d"), true, false) == null)
+    assert(root.create(new Path("/a/b/c/d")) === dir)
     assert(root.get(new Path("/a")).isDir)
     assert(root.get(new Path("/a/b")).isDir)
     assert(root.get(new Path("/a/b/c")).isDir)
@@ -51,58 +52,61 @@ class INodeSuite extends UnitTestSuite {
 
   test("create a root directory") {
     val root = INode.root
-    assert(root.create(new Path("/"), true, false) == null)
-    assert(root.create(new Path("/"), false, false) == null)
-    assert(root.create(new Path("/"), false, true) == null)
+    assert(root.create(new Path("/")) == root)
     assert(root.toString === "DIR {}")
   }
 
   test("create a leaf directory") {
     val root = INode.root
-    assert(root.create(new Path("/a/b/c"), true, false) != null)
-    assert(root.create(new Path("/a/b/c/d"), true, false) != null)
+    assert(root.create(new Path("/a/b/c")) != null)
+    assert(root.create(new Path("/a/b/c/d")) != null)
     assert(root.get(new Path("/a/b/c/d")).isDir)
 
-    // overwriteFile does not matter
-    assert(root.create(new Path("/a/b/c2"), true, true) != null)
-    assert(root.create(new Path("/a/b/c2/d2"), true, true) != null)
+    assert(root.create(new Path("/a/b/c2")) != null)
+    assert(root.create(new Path("/a/b/c2/d2")) != null)
     assert(root.get(new Path("/a/b/c2/d2")).isDir)
   }
 
   test("create a file") {
     val root = INode.root
-    assert(root.create(new Path("/a/b/c"), true, false) != null)
-    assert(root.create(new Path("/a/b/c/file"), false, false) != null)
+    assert(root.create(new Path("/a/b/c")) != null)
+    assert(root.createFile(new Path("/a/b/c/file"), null, false) != null)
     assert(!root.get(new Path("/a/b/c/file")).isDir)
+  }
+
+  test("create a file for the root directory") {
+    val root = INode.root
+    assert(root.createFile(new Path("/"), null, false) == null)
+    assert(root.createFile(new Path("/"), null, true) == null)
   }
 
   test("create a file that already exists") {
     val root = INode.root
-    assert(root.create(new Path("/a/b/c"), true, false) != null)
+    assert(root.create(new Path("/a/b/c")) != null)
 
-    assert(root.create(new Path("/a/b/c/file"), false, false) != null)
+    assert(root.createFile(new Path("/a/b/c/file"), null, false) != null)
     assert(!root.get(new Path("/a/b/c/file")).isDir)
 
-    assert(root.create(new Path("/a/b/c/file"), false, false) == null)
+    assert(root.createFile(new Path("/a/b/c/file"), null, false) == null)
     assert(!root.get(new Path("/a/b/c/file")).isDir)
   }
 
-  test("create a file with overwriteFile") {
+  test("create a file with overwrite") {
     val root = INode.root
-    assert(root.create(new Path("/a/b/c"), true, false) != null)
+    assert(root.create(new Path("/a/b/c")) != null)
 
-    assert(root.create(new Path("/a/b/c/file"), false, false) != null)
+    assert(root.createFile(new Path("/a/b/c/file"), null, false) != null)
     assert(!root.get(new Path("/a/b/c/file")).isDir)
 
-    assert(root.create(new Path("/a/b/c/file"), false, true) != null)
+    assert(root.createFile(new Path("/a/b/c/file"), null, true) != null)
     assert(!root.get(new Path("/a/b/c/file")).isDir)
   }
 
   test("create a file for the directory path") {
     val root = INode.root
-    root.create(new Path("/a/b/c"), true, false)
-    assert(root.create(new Path("/a/b/c"), false, false) == null)
-    assert(root.create(new Path("/a/b/c"), false, true) == null)
+    root.create(new Path("/a/b/c"))
+    assert(root.createFile(new Path("/a/b/c"), null, false) == null)
+    assert(root.createFile(new Path("/a/b/c"), null, true) == null)
 
     assert(root.get(new Path("/a")).isDir)
     assert(root.get(new Path("/a/b")).isDir)
@@ -111,8 +115,9 @@ class INodeSuite extends UnitTestSuite {
 
   test("create a directory for the file path") {
     val root = INode.root
-    root.create(new Path("/a/b/file"), false, false)
-    assert(root.create(new Path("/a/b/file"), true, false) == null)
+    root.createFile(new Path("/a/b/file"), null, false)
+    assert(root.create(new Path("/a/b/file")) == null)
+    assert(root.create(new Path("/a/b/file/c")) == null)
 
     assert(root.get(new Path("/a")).isDir)
     assert(root.get(new Path("/a/b")).isDir)
@@ -131,13 +136,13 @@ class INodeSuite extends UnitTestSuite {
 
   test("get a file") {
     val root = INode.root
-    root.create(new Path("/a/b/c/file"), false, true)
+    root.createFile(new Path("/a/b/c/file"), null, true)
     assert(!root.get(new Path("/a/b/c/file")).isDir)
   }
 
   test("get beyond path") {
     val root = INode.root
-    root.create(new Path("/a/b"), false, true)
+    root.createFile(new Path("/a/b"), null, true)
     assert(root.get(new Path("/a/b")) != null)
     assert(root.get(new Path("/a/b/c")) == null)
     assert(root.get(new Path("/a/b/c/file")) == null)
@@ -146,14 +151,15 @@ class INodeSuite extends UnitTestSuite {
   test("remove a root node") {
     val root = INode.root
     assert(!root.remove(new Path("/"), false))
-    assert(root.remove(new Path("/"), true)) // Check removal of a root directory recursively
+    assert(!root.remove(new Path("/"), true)) // Check removal of a root directory recursively
+    assert(root.toString === "DIR {}")
   }
 
   test("remove a node") {
     val root = INode.root
-    root.create(new Path("/a/b/c/x"), true, false)
-    root.create(new Path("/a/b/c/y"), true, false)
-    root.create(new Path("/a/b/file"), false, false)
+    root.create(new Path("/a/b/c/x"))
+    root.create(new Path("/a/b/c/y"))
+    root.createFile(new Path("/a/b/file"), null, false)
 
     assert(root.remove(new Path("/a/b/c/x"), false))
     assert(root.get(new Path("/a/b/c")).isDir)
@@ -175,7 +181,7 @@ class INodeSuite extends UnitTestSuite {
 
   test("remove non-existent path") {
     val root = INode.root
-    root.create(new Path("/a/b/file"), false, false)
+    root.createFile(new Path("/a/b/file"), null, false)
 
     assert(!root.remove(new Path("/a/b/file/c"), true))
     assert(!root.remove(new Path("/a/b/file/c"), false))
@@ -185,10 +191,10 @@ class INodeSuite extends UnitTestSuite {
 
   test("list") {
     val root = INode.root
-    root.create(new Path("/a/b/x"), true, false)
-    root.create(new Path("/a/b/y"), true, false)
-    root.create(new Path("/a/b/z"), true, false)
-    root.create(new Path("/a/b/_file"), false, false)
+    root.create(new Path("/a/b/x"))
+    root.create(new Path("/a/b/y"))
+    root.create(new Path("/a/b/z"))
+    root.createFile(new Path("/a/b/_file"), null, false)
 
     assert(root.list(new Path("/a")).map(_.getName) === Seq("b"))
     assert(root.list(new Path("/a/b")).map(_.getName) === Seq("_file", "x", "y", "z"))
@@ -196,59 +202,53 @@ class INodeSuite extends UnitTestSuite {
 
   test("list result sorting order") {
     val root = INode.root
-    val items = (0 until 32) // more than initial hash map capacity
+    val items = (0 until 128) // more than initial hash map capacity
     for (i <- items) {
-      root.create(new Path("/a/" + i), true, false)
+      root.create(new Path("/a/" + i))
     }
     assert(root.list(new Path("/a")).map(_.getName) === items.map(_.toString).sorted)
   }
 
   test("list non-existent path") {
     val root = INode.root
-    root.create(new Path("/a/b"), true, false)
+    root.create(new Path("/a/b"))
     assert(root.list(new Path("/a/b/c/d")) == null)
   }
 
   test("list empty directory") {
     val root = INode.root
-    root.create(new Path("/a/b"), true, false)
+    root.create(new Path("/a/b"))
     assert(root.list(new Path("/a/b")).map(_.getName) === Seq())
   }
 
   test("list a file") {
     val root = INode.root
-    root.create(new Path("/a/b/file"), false, false)
+    root.createFile(new Path("/a/b/file"), null, false)
     assert(root.list(new Path("/a/b")).map(_.getName) === Seq("file"))
     assert(root.list(new Path("/a/b/file")).map(_.getName) === Seq("file"))
   }
 
-  test("open an empty file") {
+  test("content of an empty file") {
     val root = INode.root
-    val node = root.create(new Path("/file"), false, false)
-    assert(node.open().available() == 0)
+    val node = root.createFile(new Path("/file"), null, false)
+    assert(node.getContent() === Seq())
+    assert(node.getContentLength() === 0)
   }
 
-  test("open a directory") {
+  test("content of a directory") {
     val root = INode.root
-    val node = root.create(new Path("/dir"), true, false)
-    assert(node.open() == null)
+    val node = root.create(new Path("/dir"))
+    assert(node.getContent() == null)
+    assert(node.getContentLength() === 0)
   }
 
-  test("open a non-empty file") {
+  test("content of a non-empty file") {
     val root = INode.root
-    val node = root.create(new Path("/file"), false, false)
-    node.setContent(Array[Byte](1, 2, 3, 4, 5))
+    val node = root.createFile(new Path("/file"), Array[Byte](1, 2, 3, 4, 5), false)
 
-    val res = new Array[Byte](8)
-    val in = root.get(new Path("/file")).open()
-    assert(in.read(res, 0, res.length) == 5)
-    assert(res === Seq(1, 2, 3, 4, 5, 0, 0, 0))
-  }
-
-  test("set content on a directory") {
-    val root = INode.root
-    val node = root.create(new Path("/dir"), true, false)
-    node.setContent(Array[Byte](1, 2, 3, 4, 5))
-    assert(root.get(new Path("/dir")).open() == null)
+    val res = root.get(new Path("/file"))
+    assert(res === node)
+    assert(res.getContent() === Array[Byte](1, 2, 3, 4, 5))
+    assert(res.getContentLength() === 5)
   }
 }

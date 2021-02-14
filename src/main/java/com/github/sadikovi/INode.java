@@ -1,19 +1,16 @@
 package com.github.sadikovi;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Comparator;
 
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.PositionedReadable;
-import org.apache.hadoop.fs.Seekable;
 
 public class INode {
   // Name of the INode, represents the directory or file name
   private final String name;
+  // Parent pointer, can be null for the root directory
+  private INode parent;
   // If this is null, it is a file; if it is empty, it is a directory
   private HashMap<String, INode> children;
   // Modification time for the node
@@ -29,17 +26,18 @@ public class INode {
     }
   };
 
-  // Private constructor
-  INode(String name, boolean isDir) {
-    this.name = name;
-    this.children = isDir ? new HashMap<String, INode>() : null;
-    this.modificationTime = System.currentTimeMillis();
-    this.content = null;
+  /** Creates the root of the tree */
+  public static INode root() {
+    return new INode("root", true, null);
   }
 
-  /** Returns a root node */
-  public static INode root() {
-    return new INode("root", true);
+  // Private constructor
+  private INode(String name, boolean isDir, byte[] content) {
+    this.name = name;
+    this.parent = null;
+    this.children = isDir ? new HashMap<String, INode>() : null;
+    this.modificationTime = System.currentTimeMillis();
+    this.content = isDir ? null : (content == null ? new byte[0] : content);
   }
 
   /** Returns node name (token) */
@@ -57,87 +55,14 @@ public class INode {
     return (isDir() || content == null) ? 0 : content.length;
   }
 
+  /** Returns content of the file */
+  public byte[] getContent() {
+    return isDir() ? null : content;
+  }
+
   /** Returns modification time */
   public long getModificationTime() {
     return modificationTime;
-  }
-
-  static class INodeInputStream
-      extends ByteArrayInputStream
-      implements Seekable, PositionedReadable {
-    public INodeInputStream(byte[] array) {
-      super(array);
-    }
-
-    @Override
-    public int read(long position, byte[] buffer, int offset, int length) {
-      // this method is not thread-safe
-      long curr = getPos();
-      seek(position);
-      try {
-        return read(buffer, offset, length);
-      } finally {
-        seek(curr);
-      }
-    }
-
-
-    @Override
-    public void readFully(long position, byte[] buffer) throws IOException {
-      readFully(position, buffer, 0, buffer.length);
-    }
-
-    @Override
-    public void readFully(long position, byte[] buffer, int offset, int length) throws IOException {
-      // this method is not thread-safe
-      long curr = getPos();
-      seek(position);
-      try {
-        int bytesRead = 0;
-        while (bytesRead < length) {
-          int bytes = read(buffer, offset + bytesRead, length - bytesRead);
-          if (bytes < 0) throw new IOException("Reached EOF");
-          bytesRead += bytes;
-        }
-      } finally {
-        seek(curr);
-      }
-    }
-
-    @Override
-    public void seek(long pos) {
-      skip(pos);
-    }
-
-    @Override
-    public long getPos() {
-      return this.pos;
-    }
-
-    @Override
-    public boolean seekToNewSource(long targetPos) {
-      return false;
-    }
-  }
-
-  /** Open a file */
-  public InputStream open() {
-    if (isDir()) return null;
-    return new INodeInputStream(content == null ? new byte[0] : content);
-  }
-
-  /** Set content for a file */
-  public void setContent(byte[] content) {
-    if (isDir()) return;
-    this.content = content;
-    this.modificationTime = System.currentTimeMillis();
-  }
-
-  /** Copies properties from the node "other" */
-  public void copyFrom(INode other) {
-    this.children = other.children;
-    this.content = other.content;
-    this.modificationTime = System.currentTimeMillis();
   }
 
   /** Returns a valid node for path or null if no such node exists */
@@ -172,53 +97,70 @@ public class INode {
     }
   }
 
-  /** Create path, directory or a file */
-  public INode create(Path p, boolean isDir, boolean overwriteFile) {
+  /** Creates a directory */
+  public INode create(Path p) {
     assertValidPath(p);
     INode tmp = this;
     String[] tokens = tokenize(p);
-    for (int i = 0; i < tokens.length - 1; i++) {
+    for (int i = 0; i < tokens.length; i++) {
       INode node = tmp.children.get(tokens[i]);
       if (node == null) {
-        node = new INode(tokens[i], true);
+        node = new INode(tokens[i], true, null);
         tmp.children.put(tokens[i], node);
+        node.parent = tmp;
       }
       if (!node.isDir()) return null;
       tmp = node;
     }
-    // Handle the special case of the root directory
-    if (tokens.length == 0) return null;
-    // Handle general case
-    String token = tokens[tokens.length - 1];
-    INode node = tmp.children.get(token);
-    if (node == null || !node.isDir() && !isDir && overwriteFile) {
-      node = new INode(token, isDir);
-      tmp.children.put(token, node);
+    return tmp;
+  }
+
+  /** Creates a new file */
+  public INode createFile(Path p, byte[] content, boolean overwrite) {
+    assertValidPath(p);
+    if (p.getParent() == null) return null; // handle root directory
+    INode parent = create(p.getParent());
+    if (parent == null) return null; // handle files on the path
+    INode node = parent.children.get(p.getName());
+    if (node == null || !node.isDir() && overwrite) {
+      node = new INode(p.getName(), false, content);
+      parent.children.put(p.getName(), node);
+      node.parent = parent;
       return node;
     }
     return null;
   }
 
+  /** Private method to remove a node */
+  private boolean remove(INode target) {
+    if (target == null || target.parent == null) return false;
+    target.parent.children.remove(target.getName());
+    target.parent = null;
+    return true;
+  }
+
   /** Remove the path */
   public boolean remove(Path p, boolean recursive) {
     assertValidPath(p);
-    String[] tokens = tokenize(p);
-    // Handle the special case of removing a root directory
-    if (tokens.length == 0) {
-      if (!recursive) return false; // do nothing even if it is empty
-      this.children.clear(); // if recursive, remove all of the children
-      return true;
-    }
-    // Find the parent
-    INode parent = get(p.getParent());
-    // Remove the target from the parent
-    if (parent == null || !parent.isDir()) return false;
-    INode target = parent.children.get(p.getName());
-    if (recursive || !target.isDir() || target.children.isEmpty()) {
-      parent.children.remove(p.getName());
-      return true;
-    }
-    return false;
+    INode target = get(p);
+    if (target == null || target.parent == null) return false;
+    if (!recursive && target.isDir() && !target.children.isEmpty()) return false;
+    return remove(target);
+  }
+
+  public boolean rename(Path from, Path to) {
+    assertValidPath(from);
+    assertValidPath(to);
+    INode src = get(from), dst = get(to);
+    if (src == null || src.parent == null || dst != null) return false;
+    // Try to create destination
+    dst = src.isDir() ? create(to) : createFile(to, src.content, false);
+    if (dst == null) return false;
+    // Swap the properties
+    dst.children = src.children;
+    dst.content = src.content;
+    remove(src);
+    return true;
   }
 
   /** Converts path /a/b/c into tokens ["a", "b", "c"] */

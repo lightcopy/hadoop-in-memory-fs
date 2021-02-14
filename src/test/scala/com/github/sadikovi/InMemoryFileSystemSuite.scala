@@ -38,7 +38,7 @@ class InMemoryFileSystemSuite extends UnitTestSuite {
     assert(status.getPath === new Path("dbfs://bucket/a/b/file"))
   }
 
-  test("list status") {
+  test("list a directory") {
     val fs = getFileSystem()
     fs.mkdirs(new Path("/a/1"))
     fs.mkdirs(new Path("/a/2"))
@@ -46,8 +46,23 @@ class InMemoryFileSystemSuite extends UnitTestSuite {
 
     val res = fs.listStatus(new Path("/a"))
     for (i <- 0 until res.length) {
+      assert(res(i).isDirectory)
       assert(res(i).getPath === new Path("dbfs://bucket/a/" + (i + 1)))
     }
+  }
+
+  test("list a file") {
+    val fs = getFileSystem()
+    fs.createNewFile(new Path("/a/b/file"))
+    val res1 = fs.listStatus(new Path("/a/b"))
+    assert(res1.length === 1)
+    assert(!res1.head.isDirectory)
+    assert(res1.head.getPath === new Path("dbfs://bucket/a/b/file"))
+
+    val res2 = fs.listStatus(new Path("/a/b/file"))
+    assert(res2.length === 1)
+    assert(!res2.head.isDirectory)
+    assert(res2.head.getPath === new Path("dbfs://bucket/a/b/file"))
   }
 
   test("write and read a file") {
@@ -74,13 +89,32 @@ class InMemoryFileSystemSuite extends UnitTestSuite {
 
     val in = fs.open(new Path("/file"))
     val res = in.readUTF()
-    assert(res === "data2") // create() passes overwrite = true
+    assert(res === "data1") // the last close() wrote data
+  }
+
+  test("create file on close") {
+    val fs = getFileSystem()
+    val out = fs.create(new Path("/file"))
+    assert(!fs.exists(new Path("/file")))
+    out.close
+    assert(fs.exists(new Path("/file")))
   }
 
   test("create empty file") {
     val fs = getFileSystem()
     fs.createNewFile(new Path("/file"))
     assert(fs.getFileStatus(new Path("/file")).getLen() === 0)
+  }
+
+  test("read a file") {
+    val fs = getFileSystem()
+    val out = fs.create(new Path("/file"))
+    out.writeUTF("Hello, world!")
+    out.close
+
+    val in = fs.open(new Path("/file"))
+    val res = in.readUTF()
+    assert(res === "Hello, world!")
   }
 
   test("rename") {
@@ -107,5 +141,22 @@ class InMemoryFileSystemSuite extends UnitTestSuite {
     assert(fs.exists(new Path("/a_new/b/1")))
     assert(fs.exists(new Path("/a_new/b/2")))
     assert(fs.exists(new Path("/a_new/b/file")))
+  }
+
+  test("mkdirs") {
+    val fs = getFileSystem()
+    assert(fs.mkdirs(new Path("/")))
+
+    assert(fs.mkdirs(new Path("/a/b")))
+    assert(fs.getFileStatus(new Path("/a")).isDirectory)
+    assert(fs.getFileStatus(new Path("/a/b")).isDirectory)
+
+    // Repeated creation should succeed
+    assert(fs.mkdirs(new Path("/a/b")))
+    assert(fs.getFileStatus(new Path("/a")).isDirectory)
+    assert(fs.getFileStatus(new Path("/a/b")).isDirectory)
+
+    fs.createNewFile(new Path("/a/b/file"))
+    assert(!fs.mkdirs(new Path("/a/b/file/c")))
   }
 }

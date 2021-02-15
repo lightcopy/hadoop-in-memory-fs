@@ -20,6 +20,14 @@ import org.apache.hadoop.util.Progressable;
 import org.apache.hadoop.fs.PositionedReadable;
 import org.apache.hadoop.fs.Seekable;
 
+/**
+ * In-memory test file system.
+ * The file system reuses scheme, host, port, and authority making it possible to use this class
+ * to mock S3AFileSystem, AzureBlobFileSystem, or any other distributed file system.
+ *
+ * For example, initialisaing the file system with "s3a://bucket/path", all subsequent paths are
+ * resolved against the URI, including file status, listing, writes, and reads.
+ */
 public class InMemoryFileSystem extends FileSystem {
   private String scheme; // scheme that is assigned to this file system
   private URI uri; // full URI that the file system is initialised with
@@ -283,7 +291,6 @@ public class InMemoryFileSystem extends FileSystem {
 
     /** Returns a valid node for path or null if no such node exists */
     public INode get(Path p) {
-      assertValidPath(p);
       INode tmp = this;
       String[] tokens = tokenize(p);
       for (int i = 0; i < tokens.length; i++) {
@@ -293,29 +300,8 @@ public class InMemoryFileSystem extends FileSystem {
       return tmp;
     }
 
-    /** List a directory or a file */
-    public INode[] list(Path p) {
-      assertValidPath(p);
-      INode node = get(p);
-      if (node == null) return null;
-      if (node.isDir()) {
-        INode[] res = new INode[node.children.size()];
-        int i = 0;
-        for (INode child : node.children.values()) {
-          res[i++] = child;
-        }
-        // Sort explicitly for now
-        Arrays.sort(res, DEFAULT_CMP);
-        return res;
-      } else {
-        // Listing of a file is the file itself
-        return new INode[] { node };
-      }
-    }
-
     /** Creates a directory */
     public synchronized INode create(Path p) {
-      assertValidPath(p);
       INode tmp = this;
       String[] tokens = tokenize(p);
       for (int i = 0; i < tokens.length; i++) {
@@ -334,8 +320,7 @@ public class InMemoryFileSystem extends FileSystem {
     /** Creates a new file */
     public synchronized INode createFile(Path p, byte[] content, boolean overwrite) {
       assertValidPath(p);
-      if (p.getParent() == null) return null; // handle root directory
-      INode parent = create(p.getParent());
+      INode parent = p.getParent() != null ? create(p.getParent()) : null; // handle root directory
       if (parent == null) return null; // handle files on the path
       INode node = parent.children.get(p.getName());
       if (node == null || !node.isDir() && overwrite) {
@@ -345,6 +330,25 @@ public class InMemoryFileSystem extends FileSystem {
         return node;
       }
       return null;
+    }
+
+    /** List a directory or a file */
+    public INode[] list(Path p) {
+      INode node = get(p);
+      if (node == null) return null;
+      if (node.isDir()) {
+        INode[] res = new INode[node.children.size()];
+        int i = 0;
+        for (INode child : node.children.values()) {
+          res[i++] = child;
+        }
+        // Sort explicitly for now
+        Arrays.sort(res, DEFAULT_CMP);
+        return res;
+      } else {
+        // Listing of a file is the file itself
+        return new INode[] { node };
+      }
     }
 
     /** Private method to remove a node */
@@ -357,7 +361,6 @@ public class InMemoryFileSystem extends FileSystem {
 
     /** Remove the path */
     public synchronized boolean remove(Path p, boolean recursive) {
-      assertValidPath(p);
       INode target = get(p);
       if (target == null || target.parent == null) return false;
       if (!recursive && target.isDir() && !target.children.isEmpty()) return false;
@@ -366,8 +369,6 @@ public class InMemoryFileSystem extends FileSystem {
 
     /** Renames path "from" to "to" */
     public synchronized boolean rename(Path from, Path to) {
-      assertValidPath(from);
-      assertValidPath(to);
       INode src = get(from), dst = get(to);
       if (src == null || src.parent == null || dst != null) return false;
       // Try to create destination

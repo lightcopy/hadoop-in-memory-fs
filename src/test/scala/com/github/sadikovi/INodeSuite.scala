@@ -33,6 +33,25 @@ class INodeSuite extends UnitTestSuite {
     assert(INode.tokenize(new Path("/a/b/c/")) === Seq("a", "b", "c"))
   }
 
+  test("method audit") {
+    def verify(func: Path => Unit): Unit = {
+      val err1 = intercept[AssertionError] { func(new Path("a/b")) }
+      err1.getMessage.contains("is not absolute")
+      val err2 = intercept[AssertionError] { func(null) }
+      err2.getMessage.contains("is null")
+    }
+
+    verify(root.get(_))
+    verify(root.create(_))
+    verify(root.createFile(_, Array[Byte](1), true))
+    verify(root.createFile(_, Array[Byte](1), false))
+    verify(root.list(_))
+    verify(root.remove(_, true))
+    verify(root.remove(_, false))
+    verify(root.rename(_, new Path("/dst")))
+    verify(root.rename(new Path("/src"), _))
+  }
+
   test("root is directory") {
     assert(INode.root().isDir)
   }

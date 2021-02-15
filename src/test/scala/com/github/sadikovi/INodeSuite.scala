@@ -1,6 +1,7 @@
 package com.github.sadikovi
 
 import org.apache.hadoop.fs._
+import com.github.sadikovi.InMemoryFileSystem.INode
 
 class INodeSuite extends UnitTestSuite {
   // Root directory to use in the tests
@@ -186,8 +187,8 @@ class INodeSuite extends UnitTestSuite {
     root.create(new Path("/a/b/z"))
     root.createFile(new Path("/a/b/_file"), null, false)
 
-    assert(root.list(new Path("/a")).map(_.getName) === Seq("b"))
-    assert(root.list(new Path("/a/b")).map(_.getName) === Seq("_file", "x", "y", "z"))
+    assert(root.list(new Path("/a")).map(_.name) === Seq("b"))
+    assert(root.list(new Path("/a/b")).map(_.name) === Seq("_file", "x", "y", "z"))
   }
 
   test("list result sorting order") {
@@ -195,7 +196,7 @@ class INodeSuite extends UnitTestSuite {
     for (i <- items) {
       root.create(new Path("/a/" + i))
     }
-    assert(root.list(new Path("/a")).map(_.getName) === items.map(_.toString).sorted)
+    assert(root.list(new Path("/a")).map(_.name) === items.map(_.toString).sorted)
   }
 
   test("list non-existent path") {
@@ -205,13 +206,13 @@ class INodeSuite extends UnitTestSuite {
 
   test("list empty directory") {
     root.create(new Path("/a/b"))
-    assert(root.list(new Path("/a/b")).map(_.getName) === Seq())
+    assert(root.list(new Path("/a/b")).map(_.name) === Seq())
   }
 
   test("list a file") {
     root.createFile(new Path("/a/b/file"), null, false)
-    assert(root.list(new Path("/a/b")).map(_.getName) === Seq("file"))
-    assert(root.list(new Path("/a/b/file")).map(_.getName) === Seq("file"))
+    assert(root.list(new Path("/a/b")).map(_.name) === Seq("file"))
+    assert(root.list(new Path("/a/b/file")).map(_.name) === Seq("file"))
   }
 
   test("content of an empty file") {

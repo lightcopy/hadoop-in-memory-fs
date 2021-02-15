@@ -8,7 +8,7 @@ import org.apache.hadoop.fs.Path;
 
 public class INode {
   // Name of the INode, represents the directory or file name
-  private final String name;
+  final String name;
   // Parent pointer, can be null for the root directory
   private INode parent;
   // If this is null, it is a file; if it is empty, it is a directory
@@ -22,7 +22,7 @@ public class INode {
   private static final Comparator<INode> DEFAULT_CMP = new Comparator<INode>() {
     @Override
     public int compare(INode left, INode right) {
-      return left.getName().compareTo(right.getName());
+      return left.name.compareTo(right.name);
     }
   };
 
@@ -33,16 +33,12 @@ public class INode {
 
   // Private constructor
   private INode(String name, boolean isDir, byte[] content) {
+    if (name == null || name.isEmpty()) throw new AssertionError("Name is invalid: " + name);
     this.name = name;
     this.parent = null;
     this.children = isDir ? new HashMap<String, INode>() : null;
     this.modificationTime = System.currentTimeMillis();
     this.content = isDir ? null : (content == null ? new byte[0] : content);
-  }
-
-  /** Returns node name (token) */
-  public String getName() {
-    return name;
   }
 
   /** Returns true if the node is a directory */
@@ -98,7 +94,7 @@ public class INode {
   }
 
   /** Creates a directory */
-  public INode create(Path p) {
+  public synchronized INode create(Path p) {
     assertValidPath(p);
     INode tmp = this;
     String[] tokens = tokenize(p);
@@ -116,7 +112,7 @@ public class INode {
   }
 
   /** Creates a new file */
-  public INode createFile(Path p, byte[] content, boolean overwrite) {
+  public synchronized INode createFile(Path p, byte[] content, boolean overwrite) {
     assertValidPath(p);
     if (p.getParent() == null) return null; // handle root directory
     INode parent = create(p.getParent());
@@ -134,13 +130,13 @@ public class INode {
   /** Private method to remove a node */
   private boolean remove(INode target) {
     if (target == null || target.parent == null) return false;
-    target.parent.children.remove(target.getName());
+    target.parent.children.remove(target.name);
     target.parent = null;
     return true;
   }
 
   /** Remove the path */
-  public boolean remove(Path p, boolean recursive) {
+  public synchronized boolean remove(Path p, boolean recursive) {
     assertValidPath(p);
     INode target = get(p);
     if (target == null || target.parent == null) return false;
@@ -148,7 +144,8 @@ public class INode {
     return remove(target);
   }
 
-  public boolean rename(Path from, Path to) {
+  /** Renames path "from" to "to" */
+  public synchronized boolean rename(Path from, Path to) {
     assertValidPath(from);
     assertValidPath(to);
     INode src = get(from), dst = get(to);
